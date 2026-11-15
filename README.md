@@ -12,6 +12,18 @@
 CLI 里 Ctrl+V 经常无效、粘贴缺个换行就把下一条命令粘成 `endenable`、
 PC 的控制台只吃第一条命令……这份技能把这些坑连同**处置方法**固化成流程，避免每次都重新踩。
 
+## 效果
+
+两个示例实验的拓扑（对应 `examples/` 里的命令）：
+
+![实验11 静态路由拓扑](docs/lab11-topology.png)
+
+![实验12 VLAN 间路由拓扑](docs/lab12-topology.png)
+
+实测证据 —— 跨 VLAN ping/tracert（TTL=127 说明经 1 跳路由器）：
+
+![跨 VLAN ping 实测](docs/evidence-ping.png)
+
 ## 安装
 
 DSH 会从这些位置加载 skill（`SKILL.md` 需要 `name` + `description` frontmatter）：
