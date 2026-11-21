@@ -15,8 +15,12 @@ description: 在 Windows 桌面上的 Cisco Packet Tracer 里搭建并验证网�
 ## 1. 环境前提
 
 1. **PT 8.x**（8.2.2 实测稳）。PT 7.0 在高 DPI 缩放下器件栏会错位，不要在缩放上调试，先换版本。
-2. 桌面自动化工具可用（`mcp__windows__Click / Type / Screenshot / Shortcut / Move`）。若返回 `USER_CONTROL`，说明用户正在操作——等 10 秒再试，不要连续硬点。
-3. 窗口**最大化**；125% 缩放可以，但所有点击前都按第 4 节“先看再点”。
+2. 驱动方式二选一：
+   - `mcp__windows_*` 桌面工具（可用时）；返回 `USER_CONTROL` 说明用户在操作，等 10 秒再来；
+   - **`scripts/ptlab`**（推荐，见 §12）：纯 ctypes，不依赖 MCP，自带读回验证。
+3. 窗口**最大化**；125% 缩放可以，但坐标只信 1:1 裁切（§4），不要信预览截图。
+4. **用户在动电脑时不要硬点**：PT 不在前台时点击会落进用户的窗口，而脚本仍会“跑完”。
+   ptlab 的 `front()` 守卫会直接报错；手工操作时先点一下 PT 再开始。
 
 ## 2. 铁律（违反就会浪费一小时）
 
@@ -32,6 +36,12 @@ description: 在 Windows 桌面上的 Cisco Packet Tracer 里搭建并验证网�
 | 粘贴卡住/出现 `Translating ...` 立即 **Ctrl+Shift+6** | 中止被误当主机名的 DNS 解析 |
 | PC 的 IP 用 IP Configuration 逐字段填，**先掩码 → 再 IP → 再网关**，每格先清空 | 直接输入会拼接（`255255.255.255.0`）或报 “Invalid subnet address” |
 | 连完线用 **`show cdp neighbors`** 反查端口对应 | 平行线在画布上重叠，肉眼看不出接的是哪个口 |
+| 动作前先确认 **PT 在前台**，否则点击落进用户窗口 | 用户在用时，跑完仍是“PASS”，其实什么都没做 |
+| 命令行输出**用 CLI 的 Copy 按钮读回**，不要 `sleep` 猜 | sleep 短了劫持下一条命令，长了白等；读回还能断言 |
+| 新开的设备窗口一律在**用户模式**（`R2>`），`show`/`debug` 前先 `enable` | 每次新开窗口都是新会话，`debug ip rip` 就挂在这 |
+| 启动停在 `[yes/no]` 时**先单独粘 `no\n\n`**，再粘以 `enable` 开头的整段 | 否则 `enable` 被 “Press RETURN” 吃掉，后面全在用户模式执行 |
+| 设备窗口“消失”= 被主窗口压到**后面**，用 `SetForegroundWindow` / Window 菜单调出 | 不是被 `Ctrl+Shift+6` 关掉，别重开 |
+| 串口：**先 `show ip interface brief`**，没有 Serial 再装 WIC | 8.2.2 的 2621XM 模板自带 NM-2FE2W（4×Fa + 4×Serial） |
 
 ## 3. 流程
 
@@ -108,6 +118,10 @@ description: 在 Windows 桌面上的 Cisco Packet Tracer 里搭建并验证网�
 - **离线生成 .pkt**：不可能。`.pkt` 是加密二进制，只有 PT 自己 `Save As` 能写。
 - **PT Scripting 自动建拓扑**：`Extensions → Scripting → New PT Script Module` 能建脚本文件、`Run File` 也会执行，但实测 `lw.addDevice(...)` **没有创建任何设备**（无报错、无设备），还伴随权限/焦点问题。除非有官方新 API 验证过，否则不要在这条路上花时间；把时间用在搜索框放置 + Paste 配置上。
 - **靠 `Ctrl+V` 往路由器终端粘命令**：不可靠，用 `Paste` 按钮。
+- **用 `sleep` 等命令执行完**：不可靠，会把下一条命令粘进上一条的输出里；用 ptlab 的
+  `paste()`（等提示符）或 Copy 读回。
+- **直接往 PC 控制台打字**：中文输入法会把 `ping` 变成拼音（实测出现 `192.168.5.10平`），
+  且窗口刚打开时前几个字符会丢；先按 `Shift` 切英文，打完回读一遍。
 
 ## 9. 附：带标尺截图脚本
 
@@ -136,3 +150,40 @@ python grid_shot.py --box 0 880 1200 1040 --scale 2
 
 两个示例的设备名、端口号、IP 都可以按实际实验要求替换；结构与验证套路不变。
 
+## 12. 脚本驱动：`scripts/ptlab`
+
+把 §2 的铁律做成可调用函数。核心不是“点得准”，而是**动作 + 读回**：终端文字通过 CLI 的
+Copy 按钮取回，所以粘贴结果、提示符、端口状态都能断言，而不是点了就算。
+
+```python
+import sys; sys.path.insert(0, 'scripts')
+from ptlab import Pt
+
+pt = Pt()                            # 吸附主窗口；最小化会自动还原并最大化
+pt.new_file()                        # Ctrl+N 到空白画布；有未保存修改会拒绝
+sw = pt.place('2950-24', 760, 300)   # 器件栏搜索框拖放，返回点击点
+pc = pt.place('PC-PT', 380, 300)
+pt.connect(pc, sw)                   # 直通线：PC Fa0 → 交换机 Fa0/1
+hwnd = pt.open(sw, 'Switch0')        # 双击；自动 Esc 卸连线工具 + 重试
+print(pt.paste('show interfaces status', hwnd))
+print(pt.ports(hwnd))                # [('Fa0/1', 'connected'), ...]
+```
+
+| 方法 | 作用 |
+|---|---|
+| `terminal(hwnd)` | 点 Copy 把终端文字读回；找不到 Copy 按钮返回 `None`（说明不在 CLI 页） |
+| `wait_prompt(hwnd)` | 等到提示符重新出现；自动翻 `--More--` 分页 |
+| `paste(cmd, hwnd)` | 粘配置：先处理 `[yes/no]`、必要时 `enable`，出现 `% Invalid input` 抛错 |
+| `place(model, x, y)` | 搜索框过滤 → 取图标位置 → 拖到画布 |
+| `connect(a, b, cable=...)` | 连线；端口偏移按机型给（PC→Fa0 在 +82,+86；交换机→Fa0/1 在 +42,+38） |
+| `ports(hwnd)` | 解析 `show interfaces status`，用来**验证连线**而不是猜 |
+| `front(hwnd)` | 动作前确认窗口在前台，否则抛 `PtError` |
+
+自检（PT 升级后先跑这个，验证坐标与端口偏移没变）：
+
+```
+python scripts/selftest.py            # 有未保存修改会拒绝
+python scripts/selftest.py --discard  # 丢弃当前未保存画布后测试
+```
+
+六步：新建空白 → 放 2950-24 → 放 PC-PT → 连线 → 读回端口状态 → `show version` 断言。

@@ -42,6 +42,8 @@ SKILL.md                        技能正文：10 条铁律 + 七步流程 + 状
 examples/lab11-static-route.md  静态路由实验的完整命令（含四种路由写法）
 examples/lab12-vlan-routing.md  VLAN 间路由实验（每 VLAN 一个物理口）+ 排错顺序
 scripts/grid_shot.py            截屏 + 叠加坐标网格，用来读器件栏/端口菜单位置
+scripts/ptlab/                  可编程驱动：窗口/输入/剪贴板 + PT 操作与读回验证
+scripts/selftest.py             自检：空画布放交换机+PC、连线、读回端口、show version
 ```
 
 ## 核心方法论：坐标不写死
@@ -56,6 +58,42 @@ PT 的控件位置随窗口大小、缩放、面板滚动而变，记死像素�
 ```bash
 python scripts/grid_shot.py --box 0 880 1200 1040 --scale 2 --out grid.png
 ```
+
+## 脚本驱动（ptlab）
+
+把上面这些“先看再点 + 点完复核”的流程做成了函数，核心原则是**动作后必须读回**——终端文字
+是用 CLI 自己的 Copy 按钮取回来的，不是靠 `sleep` 猜，所以粘贴结果、提示符、端口状态都能断言。
+
+```python
+import sys; sys.path.insert(0, 'scripts')
+from ptlab import Pt
+
+pt = Pt()                            # 吸附窗口，最小化会自动还原
+pt.new_file()                        # 空白画布；有未保存修改会拒绝
+sw = pt.place('2950-24', 760, 300)
+pc = pt.place('PC-PT', 380, 300)
+pt.connect(pc, sw)
+hwnd = pt.open(sw, 'Switch0')
+print(pt.paste('show interfaces status', hwnd))
+print(pt.ports(hwnd))                # [('Fa0/1', 'connected'), ...]
+```
+
+- `Pt.front(hwnd)`：每个动作前确认目标窗口在前台。**用户在操作电脑时它直接报错**，而不是把
+  点击落进用户的窗口还报告“完成”。
+- `pt.paste()` 自动处理三种会吃掉首行的状态：`[yes/no]` 初始化对话、用户模式（`R2>`）、
+  `--More--` 分页；出现 `% Invalid input` 之类会抛 `PtError`。
+- `scripts/selftest.py` 是这套坐标的回归测试：PT 升级后先跑它。
+
+```
+python scripts/selftest.py            # 有未保存修改会拒绝
+python scripts/selftest.py --discard  # 丢弃当前未保存画布后测试
+python scripts/selftest.py --offline  # 只跑解析自检，不碰桌面
+```
+
+**已知问题（2026-11-22）**：在线自检 8 步里前 6 步稳定通过（放设备、连线、开窗口、读 CLI），
+从最大化设备窗口后紧接着的 `_settle()` 开始会读不到终端文字（单独调用 `terminal()` 又能读到）。
+怀疑是 `ShowWindow(SW_MAXIMIZE)` 之后的焦点/浮层状态导致选区没建立，下次应给 `terminal()`
+加逐候选点的日志再定位。`--offline` 的 9 项检查全部通过。
 
 ## 几条最值钱的经验
 
@@ -76,8 +114,8 @@ python scripts/grid_shot.py --box 0 880 1200 1040 --scale 2 --out grid.png
 ## 兼容性
 
 - 正文以 **Packet Tracer 8.2.2** 在 Windows 11、125% 缩放下验证；PT 7.0 在高 DPI 下器件栏会错位。
-- 设备操作部分按 DSH 的 Windows 桌面工具（`mcp__windows__*`）描述；换别的桌面自动化工具时，
-  PT 本身的这些行为特征不变，只要替换“截图 / 点击 / 输入 / 快捷键”的调用方式即可。
+- 驱动有两套：DSH 的 Windows 桌面工具（`mcp__windows__*`，`computer use` 打开时可用），
+  或仓库自带的 `scripts/ptlab`（纯 ctypes，不依赖 MCP）。两者可互换，PT 本身的行为特征不变。
 
 ## 说明
 
