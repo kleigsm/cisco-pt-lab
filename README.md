@@ -95,6 +95,8 @@ python scripts/selftest.py --offline  # 只跑解析自检，不碰桌面
 怀疑是 `ShowWindow(SW_MAXIMIZE)` 之后的焦点/浮层状态导致选区没建立，下次应给 `terminal()`
 加逐候选点的日志再定位。`--offline` 的 9 项检查全部通过。
 
+**已找到正解（2026-11-22 实测）**：PT 的 CLI 是 Qt 编辑框，UI Automation 直接暴露其 `Value` = 整段终端缓冲区（元素树里的 `编辑 "Control+F6 to exit CLI focus."`）。下一步把 `terminal()` 改成“优先 UIA 读 Value，失败再回落拖选 + Copy”，这个已知问题即可消失。
+
 ## 几条最值钱的经验
 
 - 选设备型号**只用器件栏搜索框**（输入 `2950-24` / `2621XM` / `PC-PT`），不要盲点图标。

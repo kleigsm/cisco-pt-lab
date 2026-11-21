@@ -189,6 +189,7 @@ print(pt.ports(hwnd))                # [('Fa0/1', 'connected'), ...]
 | `connect(a, b, cable=...)` | 连线；端口偏移按机型给（PC→Fa0 在 +82,+86；交换机→Fa0/1 在 +42,+38） |
 | `ports(hwnd)` | 解析 `show interfaces status`，用来**验证连线**而不是猜 |
 | `front(hwnd)` | 动作前确认窗口在前台，否则抛 `PtError` |
+| UIA 读终端 | **首选**：PT 的 CLI 是 Qt 编辑框，UI Automation 的 `Value` 就是整段缓冲区文本；不用拖选、不受 Copy 按钮禁用影响、还能拿到已滚出屏幕的行，失败再回落“拖选 + Copy” |
 
 自检（PT 升级后先跑这个，验证坐标与端口偏移没变）：
 
